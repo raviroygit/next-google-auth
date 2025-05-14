@@ -1,5 +1,6 @@
+// lib/auth.ts
 import { FirestoreAdapter } from '@auth/firebase-adapter';
-import { Timestamp, collection, doc, getDoc, getDocs, query, setDoc, updateDoc, where } from 'firebase/firestore';
+import { collection, doc, getDocs, query, setDoc, updateDoc, where } from 'firebase/firestore';
 import { NextAuthOptions } from 'next-auth';
 import GoogleProvider from 'next-auth/providers/google';
 import { db } from './firebase';
@@ -20,60 +21,55 @@ export const authOptions: NextAuthOptions = {
     newUser: '/log',
   },
   callbacks: {
-    async signIn({ user, account }) {
+    async signIn({ user }) {
       if (!user.email) return false;
 
       try {
-        // Check if user exists
         const userQuery = query(collection(db, 'users'), where('email', '==', user.email));
         const userSnapshot = await getDocs(userQuery);
-        
-        const currentTimestamp = Date.now();
-        
-        // If user doesn't exist, create a new record
+        const now = Date.now();
+
         if (userSnapshot.empty) {
           const newUserId = uuidv4();
           await setDoc(doc(db, 'users', newUserId), {
             available_credit: 5.0,
-            creation_timestamp_ms: currentTimestamp,
+            creation_timestamp_ms: now,
             email: user.email,
             name: user.name,
-            last_login_timestamp_ms: currentTimestamp,
+            last_login_timestamp_ms: now,
           });
         } else {
-          // Update last login time for existing user
           const userDoc = userSnapshot.docs[0];
           await updateDoc(doc(db, 'users', userDoc.id), {
-            last_login_timestamp_ms: currentTimestamp,
+            last_login_timestamp_ms: now,
           });
         }
-        
+
         return true;
       } catch (error) {
-        console.error('Error during sign in process:', error);
+        console.error('signIn callback error:', error);
         return false;
       }
     },
-    async session({ session, token }) {
-      if (session.user && session.user.email) {
+    async session({ session }) {
+      if (session.user?.email) {
         try {
           const userQuery = query(collection(db, 'users'), where('email', '==', session.user.email));
           const userSnapshot = await getDocs(userQuery);
-          
+
           if (!userSnapshot.empty) {
             const userData = userSnapshot.docs[0].data();
             session.user.credit = userData.available_credit;
             session.user.id = userSnapshot.docs[0].id;
           }
         } catch (error) {
-          console.error('Error fetching user data for session:', error);
+          console.error('session callback error:', error);
         }
       }
-      
+
       return session;
     },
-    async redirect({ url, baseUrl }) {
-      // Always redirect to /log after successful authentication
+    async redirect({ baseUrl }) {
       return `${baseUrl}/log`;
     },
   },
